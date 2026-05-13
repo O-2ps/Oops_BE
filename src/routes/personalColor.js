@@ -45,21 +45,26 @@ const upload = multer({
  */
 router.post('/analyze', upload.single('image'), async (req, res) => {
   try {
+    console.log('[ANALYZE] 요청 수신, file:', req.file ? `${req.file.originalname} (${req.file.size}b)` : 'NONE');
     if (!req.file) {
       return res.status(400).json({ success: false, message: '이미지를 업로드해주세요.' });
     }
 
+    console.log('[ANALYZE] 분석 시작');
     const result = await analyzePersonalColor(req.file.buffer);
+    console.log('[ANALYZE] 분석 완료:', result.season, result.subType);
 
     const userId = getUserIdFromReq(req);
     if (userId) {
-      await supabase.from('personal').insert({
+      console.log('[ANALYZE] Supabase 저장 시도, userId:', userId);
+      const { error: dbError } = await supabase.from('personal').insert({
         user_id: userId,
         personaltype: result.season,
         subType: result.subType,
         contents: result.description,
         created_at: new Date().toISOString(),
       });
+      if (dbError) console.error('[ANALYZE] Supabase 저장 실패:', dbError.message);
     }
 
     res.json({
@@ -67,6 +72,7 @@ router.post('/analyze', upload.single('image'), async (req, res) => {
       data: result,
     });
   } catch (err) {
+    console.error('[ANALYZE] 오류:', err.message, err.stack);
     const status = err.message.includes('얼굴을 감지') ? 422 : 500;
     res.status(status).json({ success: false, message: err.message });
   }
