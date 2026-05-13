@@ -1,0 +1,6 @@
+node_modules/
+uploads/
+models/*.json
+models/*-shard*
+.env
+*.log

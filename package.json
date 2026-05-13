@@ -1,0 +1,32 @@
+{
+  "name": "oops_be",
+  "version": "1.0.0",
+  "description": "웁스 백엔드 레포지토리 입니다",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js",
+    "setup": "node scripts/downloadModels.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/O-2ps/Oops_BE.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/O-2ps/Oops_BE/issues"
+  },
+  "homepage": "https://github.com/O-2ps/Oops_BE#readme",
+  "dependencies": {
+    "@tensorflow/tfjs-node": "^4.22.0",
+    "canvas": "^3.2.3",
+    "express": "^5.2.1",
+    "face-api.js": "^0.22.2",
+    "multer": "^2.1.1",
+    "sharp": "^0.34.5"
+  }
+}
