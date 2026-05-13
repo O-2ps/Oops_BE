@@ -1,8 +1,27 @@
 const express = require('express');
 const axios = require('axios');
 const jwt = require('jsonwebtoken');
+const supabase = require('../lib/supabase');
 
 const router = express.Router();
+
+async function upsertUser(payload) {
+  console.log('[Supabase] upsert 시도:', payload);
+  const { data, error } = await supabase.from('users').upsert(
+    {
+      kakao_id: String(payload.id),
+      username: payload.nickname,
+      created_at: new Date().toISOString(),
+    },
+    { onConflict: 'kakao_id' }
+  ).select();
+  if (error) {
+    console.error('[Supabase] upsert 실패 전체 오류:', JSON.stringify(error, null, 2));
+    return null;
+  }
+  console.log('[Supabase] upsert 성공:', data);
+  return data?.[0] ?? null;
+}
 
 const {
   KAKAO_REST_API_KEY,
@@ -73,15 +92,20 @@ router.get('/kakao/callback', async (req, res) => {
     return res.status(502).json({ success: false, message: `사용자 정보 조회 실패: ${msg}` });
   }
 
-  // 3) JWT 발급
+  // 3) JWT 발급 + Supabase 저장
   const payload = {
     id: kakaoUser.id,
-    nickname: kakaoUser.kakao_account?.profile?.nickname ?? null,
-    profileImage: kakaoUser.kakao_account?.profile?.profile_image_url ?? null,
-    email: kakaoUser.kakao_account?.email ?? null,
+    nickname: kakaoUser.kakao_account?.profile?.nickname ?? kakaoUser.properties?.nickname ?? null,
   };
 
-  const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  let dbUser, token;
+  try {
+    dbUser = await upsertUser(payload);
+    token = jwt.sign({ ...payload, userId: dbUser?.id ?? null }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  } catch (err) {
+    console.error('[AUTH] upsert/JWT 오류:', err);
+    return res.status(500).json({ success: false, message: `로그인 처리 실패: ${err.message}` });
+  }
 
   res.json({
     success: true,
@@ -96,6 +120,7 @@ router.get('/kakao/callback', async (req, res) => {
  * Body: { accessToken: string }
  */
 router.post('/kakao/token', async (req, res) => {
+  console.log('[AUTH] /kakao/token 요청 받음');
   const { accessToken } = req.body;
   if (!accessToken) {
     return res.status(400).json({ success: false, message: 'accessToken이 필요합니다.' });
@@ -107,6 +132,7 @@ router.post('/kakao/token', async (req, res) => {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
     kakaoUser = userRes.data;
+    console.log('[Kakao] 응답 전체:', JSON.stringify(kakaoUser, null, 2));
   } catch (err) {
     const msg = err.response?.data?.msg || err.message;
     return res.status(401).json({ success: false, message: `유효하지 않은 토큰: ${msg}` });
@@ -114,17 +140,22 @@ router.post('/kakao/token', async (req, res) => {
 
   const payload = {
     id: kakaoUser.id,
-    nickname: kakaoUser.kakao_account?.profile?.nickname ?? null,
-    profileImage: kakaoUser.kakao_account?.profile?.profile_image_url ?? null,
-    email: kakaoUser.kakao_account?.email ?? null,
+    nickname: kakaoUser.kakao_account?.profile?.nickname ?? kakaoUser.properties?.nickname ?? null,
   };
 
-  const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  let dbUser, token;
+  try {
+    dbUser = await upsertUser(payload);
+    token = jwt.sign({ ...payload, userId: dbUser?.id ?? null }, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  } catch (err) {
+    console.error('[AUTH] upsert/JWT 오류:', err);
+    return res.status(500).json({ success: false, message: `로그인 처리 실패: ${err.message}` });
+  }
 
   res.json({
     success: true,
     token,
-    user: payload,
+    user: { ...payload, userId: dbUser?.id ?? null },
   });
 });
 
