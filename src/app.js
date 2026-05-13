@@ -1,6 +1,8 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const personalColorRouter = require('./routes/personalColor');
+const authRouter = require('./routes/auth');
 
 const app = express();
 
@@ -14,6 +16,10 @@ app.get('/', (req, res) => {
     version: '1.0.0',
     endpoints: {
       health: 'GET /health',
+      kakaoLogin: 'GET /api/auth/kakao',
+      kakaoCallback: 'GET /api/auth/kakao/callback',
+      kakaoTokenLogin: 'POST /api/auth/kakao/token',
+      me: 'GET /api/auth/me',
       seasons: 'GET /api/personal-color/seasons',
       analyze: 'POST /api/personal-color/analyze',
     },
@@ -24,6 +30,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+app.use('/api/auth', authRouter);
 app.use('/api/personal-color', personalColorRouter);
 
 app.use((err, req, res, next) => {
