@@ -1,11 +1,24 @@
 const express = require('express');
-const path = require('path');
+const cors = require('cors');
 const personalColorRouter = require('./routes/personalColor');
 
 const app = express();
 
+app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.get('/', (req, res) => {
+  res.json({
+    name: 'Oops Personal Color API',
+    version: '1.0.0',
+    endpoints: {
+      health: 'GET /health',
+      seasons: 'GET /api/personal-color/seasons',
+      analyze: 'POST /api/personal-color/analyze',
+    },
+  });
+});
 
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
