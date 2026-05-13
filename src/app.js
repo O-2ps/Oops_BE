@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const personalColorRouter = require('./routes/personalColor');
 const authRouter = require('./routes/auth');
+const skinRouter = require('./routes/skin');
 
 const app = express();
 
@@ -31,6 +32,7 @@ app.get('/health', (req, res) => {
 
 app.use('/api/auth', authRouter);
 app.use('/api/personal-color', personalColorRouter);
+app.use('/api/skin', skinRouter);
 
 app.use((err, req, res, next) => {
   if (err.code === 'LIMIT_FILE_SIZE') {
