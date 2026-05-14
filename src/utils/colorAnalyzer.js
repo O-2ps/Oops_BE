@@ -4,12 +4,12 @@ function rgbToHsv(r, g, b) {
   const min = Math.min(r, g, b);
   const diff = max - min;
   let h = 0;
-  let s = max === 0 ? 0 : diff / max;
+  const s = max === 0 ? 0 : diff / max;
   const v = max;
   if (diff !== 0) {
-    if (max === r) h = ((g - b) / diff) % 6;
+    if (max === r)      h = ((g - b) / diff) % 6;
     else if (max === g) h = (b - r) / diff + 2;
-    else h = (r - g) / diff + 4;
+    else                h = (r - g) / diff + 4;
     h = h * 60;
     if (h < 0) h += 360;
   }
@@ -24,54 +24,97 @@ function rgbToLab(r, g, b) {
   const X = R * 0.4124 + G * 0.3576 + B * 0.1805;
   const Y = R * 0.2126 + G * 0.7152 + B * 0.0722;
   const Z = R * 0.0193 + G * 0.1192 + B * 0.9505;
-  const fx = f(X / 0.95047);
-  const fy = f(Y / 1.00000);
-  const fz = f(Z / 1.08883);
-  return { L: 116 * fy - 16, a: 500 * (fx - fy), b: 200 * (fy - fz) };
+  return {
+    L: 116 * f(Y / 1.00000) - 16,
+    a: 500 * (f(X / 0.95047) - f(Y / 1.00000)),
+    b: 200 * (f(Y / 1.00000) - f(Z / 1.08883)),
+  };
 }
 
 function f(t) {
   return t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
 }
 
+/**
+ * 피부 픽셀 판별 개선:
+ * - RGB 기반 조건: R > G > B, 일반적인 피부 최소 밝기
+ * - HSV 기반 조건: Hue 0~35(주황·황색), 채도·명도 범위 조정
+ * - 어두운 피부(v >= 0.18)까지 포함
+ */
 function isSkinPixel(r, g, b) {
-  const { h, s, v } = rgbToHsv(r, g, b);
-  return h >= 0 && h <= 50 && s >= 0.1 && s <= 0.68 && v >= 0.35;
-}
+  // RGB 기본 조건: 피부는 Red 채널이 가장 강하고, R > G > B 경향
+  if (r < 60) return false;
+  if (!(r > g && r > b)) return false;
+  if (r - g < 10) return false; // 너무 회색에 가까운 픽셀 제외
 
-function extractAvgSkinColor(pixels, width, height) {
-  let rSum = 0, gSum = 0, bSum = 0, count = 0;
-  for (let i = 0; i < pixels.length; i += 4) {
-    const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
-    if (isSkinPixel(r, g, b)) { rSum += r; gSum += g; bSum += b; count++; }
-  }
-  if (count === 0) {
-    for (let i = 0; i < pixels.length; i += 4) {
-      rSum += pixels[i]; gSum += pixels[i + 1]; bSum += pixels[i + 2];
-    }
-    count = pixels.length / 4;
-  }
-  return { r: Math.round(rSum / count), g: Math.round(gSum / count), b: Math.round(bSum / count) };
+  const { h, s, v } = rgbToHsv(r, g, b);
+  // Hue: 0~35(주황/황색), 채도: 적당한 피부 채도, 명도: 어두운 피부 포함
+  return h >= 0 && h <= 35 && s >= 0.08 && s <= 0.72 && v >= 0.18;
 }
 
 /**
- * 12타입 퍼스널 컬러 분류
+ * 피부 평균색 추출 개선:
+ * - 이상치(극단적으로 밝거나 어두운 픽셀) 제거 (trimmed mean, 상하 15%)
+ * - 유효 피부 픽셀이 50개 미만이면 폴백
+ */
+function extractAvgSkinColor(pixels, width, height) {
+  const skinPixels = [];
+  for (let i = 0; i < pixels.length; i += 4) {
+    const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+    if (isSkinPixel(r, g, b)) skinPixels.push([r, g, b]);
+  }
+
+  let pool = skinPixels;
+  if (pool.length < 50) {
+    // 폴백: 피부 픽셀이 부족하면 전체 픽셀 사용
+    for (let i = 0; i < pixels.length; i += 4) {
+      pool.push([pixels[i], pixels[i + 1], pixels[i + 2]]);
+    }
+  }
+
+  // 밝기 기준 정렬 후 상하 15% 제거 (이상치 제거)
+  pool.sort((a, b) => (a[0] + a[1] + a[2]) - (b[0] + b[1] + b[2]));
+  const trim = Math.floor(pool.length * 0.15);
+  const trimmed = pool.slice(trim, pool.length - trim);
+
+  const n = trimmed.length;
+  const rAvg = Math.round(trimmed.reduce((s, p) => s + p[0], 0) / n);
+  const gAvg = Math.round(trimmed.reduce((s, p) => s + p[1], 0) / n);
+  const bAvg = Math.round(trimmed.reduce((s, p) => s + p[2], 0) / n);
+
+  return { r: rAvg, g: gAvg, b: bAvg };
+}
+
+/**
+ * 12타입 퍼스널 컬러 분류 개선
  *
- * 분류 기준:
- *   웜/쿨: Lab a* 값 (양수=웜, 음수=쿨)
- *   명도:  Lab L* 값 (>68=밝음, 55~68=중간, <55=어두움)
- *   채도:  HSV S 값  (>0.38=선명, 0.22~0.38=보통, <0.22=뮤트)
+ * 웜/쿨 판단:
+ *   - Lab a*(붉은 기운) + b*(노란 기운) 동시 활용
+ *   - 웜: a* > 5 AND b* > 8  (붉고 노란 피부)
+ *   - 쿨: a* < 3 OR b* < 5   (차갑거나 중립)
+ *   - 경계(ambiguous)는 Lab b*로 최종 결정
+ *
+ * 명도 임계값:
+ *   - 밝음(isBright): L > 64   (기존 68 → 완화)
+ *   - 어두움(isDark): L < 58   (기존 55 → 완화)
+ *
+ * 채도 임계값:
+ *   - 선명(isClear): HSV S > 0.33  (기존 0.38 → 완화)
+ *   - 뮤트(isMuted): HSV S < 0.20  (기존 0.22 → 조정)
  */
 function classifyPersonalColor(avgRgb) {
   const { r, g, b } = avgRgb;
   const { h, s, v } = rgbToHsv(r, g, b);
   const lab = rgbToLab(r, g, b);
 
-  const isWarm = lab.a > 8 || (h <= 25 && s > 0.15);
-  const isBright = lab.L > 68;
-  const isDark = lab.L < 55;
-  const isClear = s > 0.38;
-  const isMuted = s < 0.22;
+  // 웜/쿨: Lab a*(+붉음), b*(+노랑) 조합 판단
+  const warmScore = lab.a * 0.6 + lab.b * 0.4;
+  const isWarm = warmScore > 6;
+
+  const isBright = lab.L > 64;
+  const isDark   = lab.L < 58;
+  const isClear  = s > 0.33;
+  const isMuted  = s < 0.20;
 
   let season, subType, description, palette, characteristics;
 
@@ -96,7 +139,7 @@ function classifyPersonalColor(avgRgb) {
       palette = ['#8B4513', '#6B3A2A', '#8B6914', '#3D5A1A', '#7A2A1A'];
       characteristics = ['깊고 어두운 따뜻한 색조', '버건디, 다크 브라운, 다크 올리브가 잘 어울림', '깊은 황금빛 기반의 피부 톤'];
     } else {
-      // 가을 (중간 명도)
+      // 가을 중간 명도
       if (isMuted) {
         season = 'autumn'; subType = 'muted';
         description = '가을 웜 뮤트';
@@ -113,20 +156,17 @@ function classifyPersonalColor(avgRgb) {
     // 쿨톤
     if (isBright) {
       if (isClear) {
-        // 겨울 브라이트 (밝고 선명한 쿨)
         season = 'winter'; subType = 'bright';
         description = '겨울 쿨 브라이트';
         palette = ['#6666FF', '#CC44CC', '#FF4477', '#4499FF', '#00CCAA'];
         characteristics = ['밝고 선명한 차가운 색조', '로얄블루, 마젠타, 에메랄드가 잘 어울림', '블루 기반의 선명한 피부 톤'];
       } else {
-        // 여름 라이트 (밝고 부드러운 쿨)
         season = 'summer'; subType = 'light';
         description = '여름 쿨 라이트';
         palette = ['#FFE0EC', '#E8D5F5', '#D5E8F5', '#D5F5EE', '#FFD5EC'];
         characteristics = ['밝고 연한 차가운 색조', '파우더핑크, 라벤더, 베이비블루가 잘 어울림', '핑크 기반의 밝은 피부 톤'];
       }
     } else if (isDark) {
-      // 겨울 (어두운 쿨)
       if (isClear) {
         season = 'winter'; subType = 'true';
         description = '겨울 쿨 트루';
@@ -139,7 +179,7 @@ function classifyPersonalColor(avgRgb) {
         characteristics = ['깊고 어두운 차가운 색조', '다크네이비, 플럼, 다크버건디가 잘 어울림', '차갑고 깊은 피부 톤'];
       }
     } else {
-      // 여름 (중간 명도 쿨)
+      // 여름 중간 명도
       if (isMuted) {
         season = 'summer'; subType = 'soft';
         description = '여름 쿨 소프트';
@@ -164,6 +204,7 @@ function classifyPersonalColor(avgRgb) {
       rgb: avgRgb,
       hsv: { h: Math.round(h), s: parseFloat(s.toFixed(3)), v: parseFloat(v.toFixed(3)) },
       lab: { L: parseFloat(lab.L.toFixed(2)), a: parseFloat(lab.a.toFixed(2)), b: parseFloat(lab.b.toFixed(2)) },
+      warmScore: parseFloat(warmScore.toFixed(2)),
       isWarm,
       isBright,
       isDark,
