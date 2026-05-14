@@ -5,7 +5,7 @@ const supabase = require('../lib/supabase');
 
 const router = express.Router();
 
-const REQUIRED_ANSWERS = ['dryness', 'oiliness', 'acne', 'tzone', 'sensitivity'];
+const REQUIRED_ANSWERS = ['elasticity', 'moisture', 'pigmentation', 'oiliness', 'sensitivity'];
 
 function getUserIdFromReq(req) {
   const authHeader = req.headers.authorization;

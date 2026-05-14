@@ -22,6 +22,9 @@ app.get('/', (req, res) => {
       me: 'GET /api/auth/me',
       seasons: 'GET /api/personal-color/seasons',
       analyze: 'POST /api/personal-color/analyze',
+      skinQuestions: 'GET /api/skin/questions',
+      skinDiagnose: 'POST /api/skin/diagnose',
+      skinResult: 'GET /api/skin/result',
     },
   });
 });

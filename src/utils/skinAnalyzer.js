@@ -1,19 +1,19 @@
 const QUESTIONS = [
   {
-    id: 'dryness',
-    question: '세안을 하고 아무것도\n바르지 않으면 건조하다.',
+    id: 'elasticity',
+    question: '피부가 처지거나\n잔주름이 느껴진다.',
+  },
+  {
+    id: 'moisture',
+    question: '세안 후 아무것도\n바르지 않으면 건조하고 푸석하다.',
+  },
+  {
+    id: 'pigmentation',
+    question: '잡티나 칙칙한\n피부톤이 신경 쓰인다.',
   },
   {
     id: 'oiliness',
     question: '시간이 지나면\n얼굴이 번들거린다.',
-  },
-  {
-    id: 'acne',
-    question: '여드름이나 트러블이\n자주 생긴다.',
-  },
-  {
-    id: 'tzone',
-    question: '코나 이마만\n번들거린다.',
   },
   {
     id: 'sensitivity',
@@ -21,7 +21,6 @@ const QUESTIONS = [
   },
 ];
 
-// 모든 문항 공통 선택지
 const OPTIONS = [
   { value: 'strongly_agree',    label: '매우 그렇다',    score: 4 },
   { value: 'agree',             label: '그렇다',         score: 3 },
@@ -57,44 +56,51 @@ const SKIN_TYPE_INFO = {
 
 function getScores(answers) {
   return {
-    dryness:     SCORE_MAP[answers.dryness]     ?? 2,
-    oiliness:    SCORE_MAP[answers.oiliness]    ?? 2,
-    acne:        SCORE_MAP[answers.acne]        ?? 2,
-    tzone:       SCORE_MAP[answers.tzone]       ?? 2,
-    sensitivity: SCORE_MAP[answers.sensitivity] ?? 2,
+    elasticity:   SCORE_MAP[answers.elasticity]   ?? 2,
+    moisture:     SCORE_MAP[answers.moisture]     ?? 2,
+    pigmentation: SCORE_MAP[answers.pigmentation] ?? 2,
+    oiliness:     SCORE_MAP[answers.oiliness]     ?? 2,
+    sensitivity:  SCORE_MAP[answers.sensitivity]  ?? 2,
   };
 }
 
 function classifySkinType(s) {
-  // T존만 번들 → 복합성
-  if (s.tzone >= 3 && s.oiliness <= 2) return 'combination';
-  // 전체 번들 → 지성
-  if (s.oiliness >= 3 && s.dryness <= 1) return 'oily';
-  // 건조 → 건성
-  if (s.dryness >= 3 && s.oiliness <= 1) return 'dry';
-  // 번들 + 건조 동시 → 복합성
-  if (s.oiliness >= 2 && s.dryness >= 2) return 'combination';
+  const isDry  = s.moisture  >= 3;
+  const isOily = s.oiliness  >= 3;
+
+  if (isDry && isOily)  return 'combination';
+  if (isDry && !isOily) return 'dry';
+  if (!isDry && isOily) return 'oily';
   return 'normal';
 }
 
+/**
+ * 피부나이 = 실제나이와 무관한 피부 노화 상태 지표
+ * 핵심 3요소: 탄력(elasticity), 수분도(moisture), 색소침착(pigmentation)
+ *
+ * 각 요소 score 0~4: 0=전혀없음(젊은 피부), 4=매우심함(노화)
+ * 중간값(2) 기준으로 delta 계산 → 실제나이에 가감
+ *
+ * 탄력 가중치 2.5: 콜라겐 감소·주름이 노화에 가장 직접적
+ * 수분도 가중치 1.5: 건조·잔주름에 영향
+ * 색소침착 가중치 2.0: 자외선·생활습관 누적 결과
+ *
+ * 결과 범위: actualAge ± 12년
+ */
 function calcSkinAge(actualAge, s) {
-  // 피부 컨디션 이슈 점수 (0~12)
-  const issueScore = s.dryness + s.acne + s.sensitivity;
-  let delta;
-  if (issueScore >= 9)      delta = 5;
-  else if (issueScore >= 6) delta = 3;
-  else if (issueScore >= 3) delta = 1;
-  else if (issueScore <= 1) delta = -3;
-  else                      delta = 0;
+  const elasticityDelta   = (s.elasticity   - 2) * 2.5;
+  const moistureDelta     = (s.moisture     - 2) * 1.5;
+  const pigmentationDelta = (s.pigmentation - 2) * 2.0;
 
+  const delta = Math.round(elasticityDelta + moistureDelta + pigmentationDelta);
   return Math.max(10, Math.min(99, actualAge + delta));
 }
 
 function analyzeSkin(actualAge, answers) {
   const s = getScores(answers);
   const skinType = classifySkinType(s);
-  const skinAge = calcSkinAge(actualAge, s);
-  const info = SKIN_TYPE_INFO[skinType];
+  const skinAge  = calcSkinAge(actualAge, s);
+  const info     = SKIN_TYPE_INFO[skinType];
 
   return {
     skinType,
@@ -102,8 +108,8 @@ function analyzeSkin(actualAge, answers) {
     skinAge,
     actualAge,
     ageDiff: skinAge - actualAge,
-    characteristics: info.characteristics,
-    recommendations: info.recommendations,
+    characteristics:  info.characteristics,
+    recommendations:  info.recommendations,
   };
 }
 
