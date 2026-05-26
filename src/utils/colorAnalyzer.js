@@ -1,3 +1,11 @@
+function rgbToYCbCr(r, g, b) {
+  return {
+    Y:   0.299  * r + 0.587  * g + 0.114  * b,
+    Cb: -0.169  * r - 0.331  * g + 0.500  * b + 128,
+    Cr:  0.500  * r - 0.419  * g - 0.081  * b + 128,
+  };
+}
+
 function rgbToHsv(r, g, b) {
   r /= 255; g /= 255; b /= 255;
   const max = Math.max(r, g, b);
@@ -36,26 +44,27 @@ function f(t) {
 }
 
 /**
- * 피부 픽셀 판별 개선:
- * - RGB 기반 조건: R > G > B, 일반적인 피부 최소 밝기
- * - HSV 기반 조건: Hue 0~35(주황·황색), 채도·명도 범위 조정
- * - 어두운 피부(v >= 0.18)까지 포함
+ * 피부 픽셀 판별:
+ * 1차: YCbCr 기반 (연구 검증된 범위, 다양한 피부톤 커버)
+ * 2차: HSV 기반 보조 판별 (백업)
  */
 function isSkinPixel(r, g, b) {
-  // RGB 기본 조건: 피부는 Red 채널이 가장 강하고, R > G > B 경향
-  if (r < 60) return false;
-  if (!(r > g && r > b)) return false;
-  if (r - g < 10) return false; // 너무 회색에 가까운 픽셀 제외
+  if (r < 45) return false;
 
+  // YCbCr: 가장 넓은 피부톤 범위를 포괄하는 연구 검증 범위
+  const { Cb, Cr } = rgbToYCbCr(r, g, b);
+  if (Cb >= 77 && Cb <= 127 && Cr >= 133 && Cr <= 173) return true;
+
+  // HSV 보조: R이 우세하고 피부 Hue 범위(0~40)
+  if (!(r > g && r > b) || r - g < 10) return false;
   const { h, s, v } = rgbToHsv(r, g, b);
-  // Hue: 0~35(주황/황색), 채도: 적당한 피부 채도, 명도: 어두운 피부 포함
-  return h >= 0 && h <= 35 && s >= 0.08 && s <= 0.72 && v >= 0.18;
+  return h >= 0 && h <= 40 && s >= 0.06 && s <= 0.75 && v >= 0.15;
 }
 
 /**
- * 피부 평균색 추출 개선:
- * - 이상치(극단적으로 밝거나 어두운 픽셀) 제거 (trimmed mean, 상하 15%)
- * - 유효 피부 픽셀이 50개 미만이면 폴백
+ * 피부 평균색 추출:
+ * - 이상치 제거 (trimmed mean, 상하 15%)
+ * - 피부 픽셀 < 50이면 느슨한 기준으로 재시도, 그래도 부족하면 전체 픽셀 사용
  */
 function extractAvgSkinColor(pixels, width, height) {
   const skinPixels = [];
@@ -66,9 +75,19 @@ function extractAvgSkinColor(pixels, width, height) {
 
   let pool = skinPixels;
   if (pool.length < 50) {
-    // 폴백: 피부 픽셀이 부족하면 전체 픽셀 사용
+    // 1차 폴백: 느슨한 기준 (밝기 충분 + R 우세)
+    const lenient = [];
     for (let i = 0; i < pixels.length; i += 4) {
-      pool.push([pixels[i], pixels[i + 1], pixels[i + 2]]);
+      const r = pixels[i], g = pixels[i + 1], b = pixels[i + 2];
+      if (r + g + b > 150 && r > 60 && r >= g && r >= b) lenient.push([r, g, b]);
+    }
+    pool = lenient.length >= 20 ? lenient : skinPixels;
+    // 2차 폴백: 전체 픽셀
+    if (pool.length < 20) {
+      pool = [];
+      for (let i = 0; i < pixels.length; i += 4) {
+        pool.push([pixels[i], pixels[i + 1], pixels[i + 2]]);
+      }
     }
   }
 
@@ -85,22 +104,22 @@ function extractAvgSkinColor(pixels, width, height) {
   return { r: rAvg, g: gAvg, b: bAvg };
 }
 
+// Lab L값으로 피부 밝기 단계 분류
+function classifySkinTone(L) {
+  if (L >= 72) return { tone: 'very_light', label: '매우 밝은 피부' };
+  if (L >= 62) return { tone: 'light',      label: '밝은 피부' };
+  if (L >= 52) return { tone: 'medium',     label: '중간 피부' };
+  if (L >= 42) return { tone: 'tan',        label: '진한 피부' };
+  return               { tone: 'deep',      label: '어두운 피부' };
+}
+
 /**
- * 12타입 퍼스널 컬러 분류 개선
+ * 12타입 퍼스널 컬러 분류
  *
- * 웜/쿨 판단:
- *   - Lab a*(붉은 기운) + b*(노란 기운) 동시 활용
- *   - 웜: a* > 5 AND b* > 8  (붉고 노란 피부)
- *   - 쿨: a* < 3 OR b* < 5   (차갑거나 중립)
- *   - 경계(ambiguous)는 Lab b*로 최종 결정
- *
- * 명도 임계값:
- *   - 밝음(isBright): L > 64   (기존 68 → 완화)
- *   - 어두움(isDark): L < 58   (기존 55 → 완화)
- *
- * 채도 임계값:
- *   - 선명(isClear): HSV S > 0.33  (기존 0.38 → 완화)
- *   - 뮤트(isMuted): HSV S < 0.20  (기존 0.22 → 조정)
+ * 웜/쿨: warmScore = Lab a*(×0.6) + b*(×0.4) > 6 → 웜
+ * 명도:  isBright(L > 64), isDark(L < 58)
+ * 채도:  isClear(S > 0.33), isMuted(S < 0.20)
+ * confidence: warmScore 경계 거리 기반 (0~1)
  */
 function classifyPersonalColor(avgRgb) {
   const { r, g, b } = avgRgb;
@@ -194,12 +213,25 @@ function classifyPersonalColor(avgRgb) {
     }
   }
 
+  const skinTone = classifySkinTone(lab.L);
+
+  // warmScore 경계(6) 기준 거리로 신뢰도 산출 (0~1, 1에 가까울수록 명확한 분류)
+  const warmConfidence    = Math.min(1, Math.abs(warmScore - 6) / 8);
+  const lightnessConfidence = isBright
+    ? Math.min(1, (lab.L - 64) / 8)
+    : isDark
+      ? Math.min(1, (58 - lab.L) / 8)
+      : 0.3;
+  const confidence = parseFloat((warmConfidence * 0.65 + lightnessConfidence * 0.35).toFixed(2));
+
   return {
     season,
     subType,
     description,
     palette,
     characteristics,
+    skinTone,
+    confidence,
     analysis: {
       rgb: avgRgb,
       hsv: { h: Math.round(h), s: parseFloat(s.toFixed(3)), v: parseFloat(v.toFixed(3)) },
@@ -214,4 +246,4 @@ function classifyPersonalColor(avgRgb) {
   };
 }
 
-module.exports = { rgbToHsv, rgbToLab, isSkinPixel, extractAvgSkinColor, classifyPersonalColor };
+module.exports = { rgbToYCbCr, rgbToHsv, rgbToLab, isSkinPixel, extractAvgSkinColor, classifyPersonalColor };
