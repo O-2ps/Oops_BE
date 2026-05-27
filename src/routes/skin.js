@@ -1,22 +1,11 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
-const { QUESTIONS, OPTIONS, analyzeSkin } = require('../utils/skinAnalyzer');
+const { QUESTIONS, OPTIONS, SKIN_TYPE_INFO, analyzeSkin } = require('../utils/skinAnalyzer');
+const { requireAuth, optionalAuth } = require('../middleware/auth');
 const supabase = require('../lib/supabase');
 
 const router = express.Router();
 
 const REQUIRED_ANSWERS = ['elasticity', 'moisture', 'pigmentation', 'oiliness', 'sensitivity'];
-
-function getUserIdFromReq(req) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) return null;
-  try {
-    const decoded = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET);
-    return decoded.userId ?? null;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * GET /api/skin/questions
@@ -32,7 +21,7 @@ router.get('/questions', (req, res) => {
  * Body: { age: number, answers: { [questionId]: string } }
  * Response: 피부 타입 + 피부 나이 분석 결과
  */
-router.post('/diagnose', async (req, res) => {
+router.post('/diagnose', optionalAuth, async (req, res) => {
   try {
     const { age, answers } = req.body;
 
@@ -50,10 +39,9 @@ router.post('/diagnose', async (req, res) => {
 
     const result = analyzeSkin(age, answers);
 
-    const userId = getUserIdFromReq(req);
-    if (userId) {
+    if (req.userId) {
       const { error: dbError } = await supabase.from('skin').insert({
-        user_id: Number(userId),
+        user_id: Number(req.userId),
         skintype: result.skinType,
         age: result.skinAge,
         created_at: new Date().toISOString(),
@@ -72,17 +60,12 @@ router.post('/diagnose', async (req, res) => {
  * GET /api/skin/result
  * 로그인된 사용자의 가장 최근 피부 진단 결과 반환
  */
-router.get('/result', async (req, res) => {
+router.get('/result', requireAuth, async (req, res) => {
   try {
-    const userId = getUserIdFromReq(req);
-    if (!userId) {
-      return res.status(401).json({ success: false, message: '로그인이 필요합니다.' });
-    }
-
     const { data, error } = await supabase
       .from('skin')
       .select('id, skintype, age, created_at')
-      .eq('user_id', userId)
+      .eq('user_id', req.userId)
       .order('created_at', { ascending: false })
       .limit(1)
       .single();
@@ -93,13 +76,6 @@ router.get('/result', async (req, res) => {
       }
       throw error;
     }
-
-    const SKIN_TYPE_INFO = {
-      dry:         { label: '건성 피부',   characteristics: ['세안 후 당기고 건조함', '각질이 생기기 쉬움', '유분·수분 모두 부족'], recommendations: ['고보습 크림 사용', '저자극 클렌저 사용', '알코올 제품 피하기'] },
-      oily:        { label: '지성 피부',   characteristics: ['피지 분비 많고 번들거림', '모공이 크고 막히기 쉬움', '여드름·블랙헤드 생기기 쉬움'], recommendations: ['가벼운 젤 타입 보습제', '폼 클렌저로 이중세안', '논코메도제닉 제품 선택'] },
-      combination: { label: '복합성 피부', characteristics: ['T존 번들, U존 건조', '부위별 피부 상태가 다름', '계절에 따라 변화가 큼'], recommendations: ['부위별 다른 제품 사용', '수분 에센스로 밸런스 유지'] },
-      normal:      { label: '중성 피부',   characteristics: ['유·수분 밸런스가 좋음', '트러블이 적고 피부결이 고름'], recommendations: ['현재 루틴 유지', '자외선 차단제 꼼꼼히 사용'] },
-    };
 
     const info = SKIN_TYPE_INFO[data.skintype] ?? { label: data.skintype, characteristics: [], recommendations: [] };
 

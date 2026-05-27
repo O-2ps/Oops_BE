@@ -1,25 +1,14 @@
 const express = require('express');
 const multer = require('multer');
-const jwt = require('jsonwebtoken');
 const { analyzePersonalColor } = require('../services/faceAnalysisService');
+const { requireAuth, optionalAuth } = require('../middleware/auth');
 const supabase = require('../lib/supabase');
 
 const router = express.Router();
 
-function getUserIdFromReq(req) {
-  const authHeader = req.headers.authorization;
-  if (!authHeader?.startsWith('Bearer ')) return null;
-  try {
-    const decoded = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET);
-    return decoded.userId ?? null;
-  } catch {
-    return null;
-  }
-}
-
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter(req, file, cb) {
     if (!file.mimetype.startsWith('image/')) {
       return cb(new Error('이미지 파일만 업로드 가능합니다.'));
@@ -34,31 +23,18 @@ const upload = multer({
  *
  * Body: multipart/form-data
  *   - image: 이미지 파일 (JPEG, PNG, WebP)
- *
- * Response:
- *   - season: 'spring' | 'summer' | 'autumn' | 'winter'
- *   - description: 한국어 설명
- *   - palette: 어울리는 색상 hex 배열
- *   - characteristics: 특징 설명 배열
- *   - analysis: HSV, Lab, RGB 분석값
- *   - face: 얼굴 감지 영역
  */
-router.post('/analyze', upload.single('image'), async (req, res) => {
+router.post('/analyze', upload.single('image'), optionalAuth, async (req, res) => {
   try {
-    console.log('[ANALYZE] 요청 수신, file:', req.file ? `${req.file.originalname} (${req.file.size}b)` : 'NONE');
     if (!req.file) {
       return res.status(400).json({ success: false, message: '이미지를 업로드해주세요.' });
     }
 
-    console.log('[ANALYZE] 분석 시작');
     const result = await analyzePersonalColor(req.file.buffer);
-    console.log('[ANALYZE] 분석 완료:', result.season, result.subType);
 
-    const userId = getUserIdFromReq(req);
-    if (userId) {
-      console.log('[ANALYZE] Supabase 저장 시도, userId:', userId);
+    if (req.userId) {
       const { error: dbError } = await supabase.from('personal').insert({
-        user_id: userId,
+        user_id: req.userId,
         personaltype: result.season,
         subType: result.subType,
         contents: result.description,
@@ -67,12 +43,9 @@ router.post('/analyze', upload.single('image'), async (req, res) => {
       if (dbError) console.error('[ANALYZE] Supabase 저장 실패:', dbError.message);
     }
 
-    res.json({
-      success: true,
-      data: result,
-    });
+    res.json({ success: true, data: result });
   } catch (err) {
-    console.error('[ANALYZE] 오류:', err.message, err.stack);
+    console.error('[ANALYZE] 오류:', err.message);
     const status = err.message.includes('얼굴을 감지') ? 422 : 500;
     res.status(status).json({ success: false, message: err.message });
   }
@@ -154,34 +127,6 @@ router.get('/seasons', (req, res) => {
       },
     ],
   });
-});
-
-/**
- * POST /api/personal-color/skin
- * Body: { age: number }
- */
-router.post('/skin', async (req, res) => {
-  const userId = getUserIdFromReq(req);
-  if (!userId) {
-    return res.status(401).json({ success: false, message: '로그인이 필요합니다.' });
-  }
-
-  const { age } = req.body;
-  if (!age || typeof age !== 'number') {
-    return res.status(400).json({ success: false, message: 'age(숫자)가 필요합니다.' });
-  }
-
-  const { data, error } = await supabase.from('skin').insert({
-    user_id: userId,
-    age,
-    created_at: new Date().toISOString(),
-  }).select();
-
-  if (error) {
-    return res.status(500).json({ success: false, message: error.message });
-  }
-
-  res.json({ success: true, data: data[0] });
 });
 
 module.exports = router;

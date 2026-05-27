@@ -146,4 +146,4 @@ function analyzeSkin(actualAge, answers) {
   };
 }
 
-module.exports = { QUESTIONS, OPTIONS, analyzeSkin };
+module.exports = { QUESTIONS, OPTIONS, SKIN_TYPE_INFO, analyzeSkin };
