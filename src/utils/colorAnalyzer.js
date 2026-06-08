@@ -114,26 +114,35 @@ function classifySkinTone(L) {
 }
 
 /**
- * 12타입 퍼스널 컬러 분류
+ * 13타입 퍼스널 컬러 분류
  *
- * 웜/쿨: warmScore = Lab a*(×0.6) + b*(×0.4) > 6 → 웜
- * 명도:  isBright(L > 64), isDark(L < 58)
- * 채도:  isClear(S > 0.33), isMuted(S < 0.20)
- * confidence: warmScore 경계 거리 기반 (0~1)
+ * 웜/쿨: warmScore = Lab b* > 8 → 웜  (노랑-파랑 축이 핵심 판별자)
+ * 명도:  isBright(L > 72), isDark(L < 55), isVeryDark(L < 48)
+ * 채도:  Lab 채도 C*(=√(a²+b²)) 사용 — HSV S보다 지각적으로 정확
+ *        isClear(C* > 15), isMuted(C* < 9)
+ * confidence: 웜/쿨·명도·채도 세 축 기반 (0~1)
  */
 function classifyPersonalColor(avgRgb) {
   const { r, g, b } = avgRgb;
   const { h, s, v } = rgbToHsv(r, g, b);
   const lab = rgbToLab(r, g, b);
 
-  // 웜/쿨: Lab a*(+붉음), b*(+노랑) 조합 판단
-  const warmScore = lab.a * 0.6 + lab.b * 0.4;
-  const isWarm = warmScore > 6;
+  // Lab 채도(C*): 지각적으로 균일한 채도 척도
+  const Cstar = Math.sqrt(lab.a * lab.a + lab.b * lab.b);
 
-  const isBright = lab.L > 64;
-  const isDark   = lab.L < 58;
-  const isClear  = s > 0.33;
-  const isMuted  = s < 0.20;
+  // 웜/쿨: b*(노랑-파랑 축)이 핵심 판별자
+  // 웜 피부 b* ≈ 13~30, 쿨 피부 b* ≈ -2~4 → 임계값 8이 명확하게 분리
+  // 매우 밝은 피부(L>80)는 전체 채도가 낮아 b* 범위가 압축됨 → 임계값 완화
+  const warmScore = lab.b;
+  const isWarm = lab.b > 8 || (lab.L > 80 && lab.b > 5);
+
+  const isBright   = lab.L > 72;
+  const isDark     = lab.L < 55;
+  const isVeryDark = lab.L < 48;
+  const isClear    = Cstar > 15;
+  const isMuted    = Cstar < 9;
+  // b* < 0: 파란기조 → winter 지표 (summer는 b* ≥ 0의 로즈/핑크 기조)
+  const isBlue     = lab.b < 0;
 
   let season, subType, description, palette, characteristics;
 
@@ -145,6 +154,11 @@ function classifyPersonalColor(avgRgb) {
         description = '봄 웜 라이트';
         palette = ['#FFE5CC', '#FFD9B3', '#FFECB3', '#D4E8A8', '#FFD5E8'];
         characteristics = ['밝고 연한 따뜻한 색조', '피치, 아이보리, 연한 코럴이 잘 어울림', '노랑 기반의 밝은 피부 톤'];
+      } else if (isClear) {
+        season = 'spring'; subType = 'vivid';
+        description = '봄 웜 비비드';
+        palette = ['#FF8C00', '#FF5733', '#FFD700', '#7CFC00', '#FF69B4'];
+        characteristics = ['밝고 생기있는 선명한 색조', '오렌지, 코럴레드, 라임이 잘 어울림', '선명한 황금빛 기반의 활기찬 피부 톤'];
       } else {
         season = 'spring'; subType = 'true';
         description = '봄 웜 트루';
@@ -172,39 +186,59 @@ function classifyPersonalColor(avgRgb) {
       }
     }
   } else {
-    // 쿨톤
+    // 쿨톤: b* < 0(파란기조)=winter, b* ≥ 0(로즈기조)=summer
     if (isBright) {
-      if (isClear) {
+      // 밝은 쿨 (L > 72)
+      if (isMuted) {
+        // 창백 + 뮤트: 소프트 서머
+        season = 'summer'; subType = 'soft';
+        description = '여름 쿨 소프트';
+        palette = ['#D4B8C8', '#B8B8D4', '#B8CCD4', '#C8D4B8', '#D4C8D4'];
+        characteristics = ['뮤트하고 부드러운 차가운 색조', '모브, 스모키블루, 소프트핑크가 잘 어울림', '차갑고 부드러운 피부 톤'];
+      } else if (isBlue || isClear) {
+        // 창백 + 파란기조 or 선명: 겨울 브라이트
         season = 'winter'; subType = 'bright';
         description = '겨울 쿨 브라이트';
         palette = ['#6666FF', '#CC44CC', '#FF4477', '#4499FF', '#00CCAA'];
         characteristics = ['밝고 선명한 차가운 색조', '로얄블루, 마젠타, 에메랄드가 잘 어울림', '블루 기반의 선명한 피부 톤'];
       } else {
+        // 창백 + 로즈기조 + 중간채도: 여름 라이트
         season = 'summer'; subType = 'light';
         description = '여름 쿨 라이트';
         palette = ['#FFE0EC', '#E8D5F5', '#D5E8F5', '#D5F5EE', '#FFD5EC'];
         characteristics = ['밝고 연한 차가운 색조', '파우더핑크, 라벤더, 베이비블루가 잘 어울림', '핑크 기반의 밝은 피부 톤'];
       }
     } else if (isDark) {
-      if (isClear) {
-        season = 'winter'; subType = 'true';
-        description = '겨울 쿨 트루';
-        palette = ['#3333CC', '#993399', '#CC3355', '#336699', '#009966'];
-        characteristics = ['선명하고 강렬한 차가운 색조', '블랙, 네이비, 버건디, 퓨어화이트가 잘 어울림', '블루·로즈 기반의 피부 톤'];
-      } else {
+      // 어두운 쿨 (L < 55): 겨울
+      if (isVeryDark) {
+        // 매우 어두운 쿨 (L < 48): 겨울 딥
         season = 'winter'; subType = 'deep';
         description = '겨울 쿨 딥';
         palette = ['#2B2B6B', '#6B2B6B', '#6B2B3B', '#1A4060', '#1A6B4A'];
         characteristics = ['깊고 어두운 차가운 색조', '다크네이비, 플럼, 다크버건디가 잘 어울림', '차갑고 깊은 피부 톤'];
+      } else {
+        // 중간 어두운 쿨 (48 ≤ L < 55): 겨울 트루
+        season = 'winter'; subType = 'true';
+        description = '겨울 쿨 트루';
+        palette = ['#3333CC', '#993399', '#CC3355', '#336699', '#009966'];
+        characteristics = ['선명하고 강렬한 차가운 색조', '블랙, 네이비, 버건디, 퓨어화이트가 잘 어울림', '블루·로즈 기반의 피부 톤'];
       }
     } else {
-      // 여름 중간 명도
-      if (isMuted) {
+      // 중간 명도 쿨 (55 ≤ L ≤ 72)
+      if (isBlue) {
+        // 파란기조 → 겨울 브라이트 (선명한 쿨 중간 명도)
+        season = 'winter'; subType = 'bright';
+        description = '겨울 쿨 브라이트';
+        palette = ['#6666FF', '#CC44CC', '#FF4477', '#4499FF', '#00CCAA'];
+        characteristics = ['밝고 선명한 차가운 색조', '로얄블루, 마젠타, 에메랄드가 잘 어울림', '블루 기반의 선명한 피부 톤'];
+      } else if (isMuted) {
+        // 로즈기조 + 뮤트 → 여름 소프트
         season = 'summer'; subType = 'soft';
         description = '여름 쿨 소프트';
         palette = ['#D4B8C8', '#B8B8D4', '#B8CCD4', '#C8D4B8', '#D4C8D4'];
         characteristics = ['뮤트하고 부드러운 차가운 색조', '모브, 스모키블루, 소프트핑크가 잘 어울림', '차갑고 부드러운 피부 톤'];
       } else {
+        // 로즈기조 + 중간채도 → 여름 트루
         season = 'summer'; subType = 'true';
         description = '여름 쿨 트루';
         palette = ['#FFCCDD', '#CC99CC', '#99BBDD', '#AADDCC', '#FFAACC'];
@@ -215,14 +249,19 @@ function classifyPersonalColor(avgRgb) {
 
   const skinTone = classifySkinTone(lab.L);
 
-  // warmScore 경계(6) 기준 거리로 신뢰도 산출 (0~1, 1에 가까울수록 명확한 분류)
-  const warmConfidence    = Math.min(1, Math.abs(warmScore - 6) / 8);
-  const lightnessConfidence = isBright
-    ? Math.min(1, (lab.L - 64) / 8)
+  // 세 축(웜/쿨, 명도, 채도) 경계 거리 기반 신뢰도 산출 (0~1)
+  const warmConfidence = Math.min(1, Math.abs(warmScore - 8) / 10);
+  const brightnessConfidence = isBright
+    ? Math.min(1, (lab.L - 72) / 8)
     : isDark
-      ? Math.min(1, (58 - lab.L) / 8)
-      : 0.3;
-  const confidence = parseFloat((warmConfidence * 0.65 + lightnessConfidence * 0.35).toFixed(2));
+      ? Math.min(1, (55 - lab.L) / 8)
+      : 0.25;
+  const chromaConfidence = (isClear || isMuted)
+    ? Math.min(1, Math.abs(Cstar - 12) / 5)
+    : 0.3;
+  const confidence = parseFloat(
+    (warmConfidence * 0.55 + brightnessConfidence * 0.30 + chromaConfidence * 0.15).toFixed(2)
+  );
 
   return {
     season,
@@ -236,10 +275,13 @@ function classifyPersonalColor(avgRgb) {
       rgb: avgRgb,
       hsv: { h: Math.round(h), s: parseFloat(s.toFixed(3)), v: parseFloat(v.toFixed(3)) },
       lab: { L: parseFloat(lab.L.toFixed(2)), a: parseFloat(lab.a.toFixed(2)), b: parseFloat(lab.b.toFixed(2)) },
+      Cstar: parseFloat(Cstar.toFixed(2)),
       warmScore: parseFloat(warmScore.toFixed(2)),
       isWarm,
       isBright,
       isDark,
+      isVeryDark,
+      isBlue,
       isClear,
       isMuted,
     },

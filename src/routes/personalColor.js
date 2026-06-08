@@ -72,6 +72,12 @@ router.get('/seasons', (req, res) => {
         characteristics: ['밝고 선명한 따뜻한 색조', '코럴, 피치, 골든옐로우가 어울림', '황금빛 기반 톤'],
       },
       {
+        season: 'spring', subType: 'vivid',
+        description: '봄 웜 비비드',
+        palette: ['#FF8C00', '#FF5733', '#FFD700', '#7CFC00', '#FF69B4'],
+        characteristics: ['밝고 생기있는 선명한 색조', '오렌지, 코럴레드, 라임이 어울림', '선명한 황금빛 기반의 활기찬 톤'],
+      },
+      {
         season: 'summer', subType: 'light',
         description: '여름 쿨 라이트',
         palette: ['#FFE0EC', '#E8D5F5', '#D5E8F5', '#D5F5EE', '#FFD5EC'],
