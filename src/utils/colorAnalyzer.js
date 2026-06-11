@@ -131,14 +131,16 @@ function classifyPersonalColor(avgRgb) {
   const Cstar = Math.sqrt(lab.a * lab.a + lab.b * lab.b);
 
   // 웜/쿨: b*(노랑-파랑 축)이 핵심 판별자
-  // 웜 피부 b* ≈ 13~30, 쿨 피부 b* ≈ -2~4 → 임계값 8이 명확하게 분리
-  // 매우 밝은 피부(L>80)는 전체 채도가 낮아 b* 범위가 압축됨 → 임계값 완화
+  // 웜 피부 b* ≈ 13~30, 쿨 피부 b* ≈ -2~4
+  // 임계값 11: 중립~경계 피부(b* 8~11)가 쿨로 분류되도록 상향 조정
+  // 매우 밝은 피부(L>80)는 채도 압축으로 b* 범위가 좁으므로 7로 완화
   const warmScore = lab.b;
-  const isWarm = lab.b > 8 || (lab.L > 80 && lab.b > 5);
+  const isWarm = lab.b > 11 || (lab.L > 80 && lab.b > 7);
 
-  const isBright   = lab.L > 72;
-  const isDark     = lab.L < 55;
-  const isVeryDark = lab.L < 48;
+  const isBright        = lab.L > 72;  // 쿨톤 분류용
+  const isWarmBright    = lab.L > 65;  // 웜톤 봄/가을 경계 (72→65 완화)
+  const isDark          = lab.L < 55;
+  const isVeryDark      = lab.L < 48;
   const isClear    = Cstar > 15;
   const isMuted    = Cstar < 9;
   // b* < 0: 파란기조 → winter 지표 (summer는 b* ≥ 0의 로즈/핑크 기조)
@@ -147,7 +149,7 @@ function classifyPersonalColor(avgRgb) {
   let season, subType, description, palette, characteristics;
 
   if (isWarm) {
-    if (isBright) {
+    if (isWarmBright) {
       // 봄
       if (isMuted) {
         season = 'spring'; subType = 'light';
@@ -250,7 +252,7 @@ function classifyPersonalColor(avgRgb) {
   const skinTone = classifySkinTone(lab.L);
 
   // 세 축(웜/쿨, 명도, 채도) 경계 거리 기반 신뢰도 산출 (0~1)
-  const warmConfidence = Math.min(1, Math.abs(warmScore - 8) / 10);
+  const warmConfidence = Math.min(1, Math.abs(warmScore - 11) / 10);
   const brightnessConfidence = isBright
     ? Math.min(1, (lab.L - 72) / 8)
     : isDark
@@ -279,6 +281,7 @@ function classifyPersonalColor(avgRgb) {
       warmScore: parseFloat(warmScore.toFixed(2)),
       isWarm,
       isBright,
+      isWarmBright,
       isDark,
       isVeryDark,
       isBlue,

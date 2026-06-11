@@ -1,6 +1,35 @@
 const sharp = require('sharp');
 const { extractAvgSkinColor, classifyPersonalColor } = require('../utils/colorAnalyzer');
 
+const DARK_THRESHOLD = 90;   // 평균 밝기가 이 값 미만이면 보정
+const TARGET_BRIGHTNESS = 140; // 목표 평균 밝기
+const MAX_GAIN = 2.8;          // 최대 증폭 배율 (과노출 방지)
+
+// 이미지가 어두울 경우 밝기를 선형 보정 (RGB 비율 유지)
+async function normalizeBrightness(imageBuffer) {
+  const { data, info } = await sharp(imageBuffer)
+    .resize({ width: 80, height: 80, fit: 'cover' })
+    .removeAlpha()
+    .raw()
+    .toBuffer({ resolveWithObject: true });
+
+  let sum = 0;
+  const total = 80 * 80;
+  for (let i = 0; i < data.length; i += 3) {
+    sum += data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114;
+  }
+  const avg = sum / total;
+
+  if (avg >= DARK_THRESHOLD) return { buffer: imageBuffer, gain: 1 };
+
+  const gain = Math.min(TARGET_BRIGHTNESS / avg, MAX_GAIN);
+  const buffer = await sharp(imageBuffer)
+    .linear(gain, 0)
+    .toBuffer();
+
+  return { buffer, gain: parseFloat(gain.toFixed(2)) };
+}
+
 // 얼굴 3개 영역(왼볼, 오른볼, 이마)에서 RGBA 픽셀을 수집
 async function extractFaceRegionPixels(imageBuffer) {
   const { data, info } = await sharp(imageBuffer)
@@ -37,7 +66,8 @@ async function analyzePersonalColor(imageBuffer) {
     throw new Error('올바른 이미지 파일이 아닙니다.');
   }
 
-  const pixels = await extractFaceRegionPixels(imageBuffer);
+  const { buffer: normalizedBuffer, gain } = await normalizeBrightness(imageBuffer);
+  const pixels = await extractFaceRegionPixels(normalizedBuffer);
   const avgColor = extractAvgSkinColor(pixels, 0, 0);
   const result = classifyPersonalColor(avgColor);
 
@@ -47,6 +77,7 @@ async function analyzePersonalColor(imageBuffer) {
       width: meta.width,
       height: meta.height,
       format: meta.format,
+      brightnessGain: gain,
     },
   };
 }
