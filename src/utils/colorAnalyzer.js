@@ -138,7 +138,8 @@ function classifyPersonalColor(avgRgb) {
   const isWarm = lab.b > 14 || (lab.L > 80 && lab.b > 9);
 
   const isBright        = lab.L > 70;  // 쿨톤 분류용 (72→70)
-  const isWarmBright    = lab.L > 60;  // 웜톤 봄/가을 경계 (65→60 완화)
+  // 봄/가을 경계: L>63이면 봄, L<57이면 가을, 중간(57~63)은 C*로 판단 (경계 흔들림 방지)
+  const isWarmBright    = lab.L > 63 || (lab.L >= 57 && Cstar > 13);
   const isDark          = lab.L < 55;
   const isVeryDark      = lab.L < 48;
   const isClear    = Cstar > 15;
