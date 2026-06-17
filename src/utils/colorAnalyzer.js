@@ -132,13 +132,13 @@ function classifyPersonalColor(avgRgb) {
 
   // 웜/쿨: b*(노랑-파랑 축)이 핵심 판별자
   // 웜 피부 b* ≈ 13~30, 쿨 피부 b* ≈ -2~4
-  // 임계값 11: 중립~경계 피부(b* 8~11)가 쿨로 분류되도록 상향 조정
-  // 매우 밝은 피부(L>80)는 채도 압축으로 b* 범위가 좁으므로 7로 완화
+  // 임계값 14: 중립~경계 피부(b* 11~14)가 쿨로 분류되도록 상향 조정 (11→14)
+  // 매우 밝은 피부(L>80)는 채도 압축으로 b* 범위가 좁으므로 9로 완화
   const warmScore = lab.b;
-  const isWarm = lab.b > 11 || (lab.L > 80 && lab.b > 7);
+  const isWarm = lab.b > 14 || (lab.L > 80 && lab.b > 9);
 
-  const isBright        = lab.L > 72;  // 쿨톤 분류용
-  const isWarmBright    = lab.L > 65;  // 웜톤 봄/가을 경계 (72→65 완화)
+  const isBright        = lab.L > 70;  // 쿨톤 분류용 (72→70)
+  const isWarmBright    = lab.L > 60;  // 웜톤 봄/가을 경계 (65→60 완화)
   const isDark          = lab.L < 55;
   const isVeryDark      = lab.L < 48;
   const isClear    = Cstar > 15;
