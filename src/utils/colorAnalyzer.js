@@ -132,14 +132,14 @@ function classifyPersonalColor(avgRgb) {
 
   // 웜/쿨: b*(노랑-파랑 축)이 핵심 판별자
   // 웜 피부 b* ≈ 13~30, 쿨 피부 b* ≈ -2~4
-  // 임계값 17: 중립~경계 피부(b* 14~17)가 쿨로 분류되도록 상향 조정 (14→17)
-  // 매우 밝은 피부(L>80)는 채도 압축으로 b* 범위가 좁으므로 11로 완화
+  // 임계값 21: b* 13~21(중립~약한 웜)을 쿨로 분류하여 쿨톤 빈도 확보
+  // 매우 밝은 피부(L>80)는 채도 압축으로 b* 범위가 좁으므로 13으로 완화
   const warmScore = lab.b;
-  const isWarm = lab.b > 17 || (lab.L > 80 && lab.b > 11);
+  const isWarm = lab.b > 21 || (lab.L > 80 && lab.b > 13);
 
-  const isBright        = lab.L > 70;  // 쿨톤 분류용 (72→70)
-  // 봄/가을 경계: L>63이면 봄, L<57이면 가을, 중간(57~63)은 C*로 판단 (경계 흔들림 방지)
-  const isWarmBright    = lab.L > 63 || (lab.L >= 57 && Cstar > 13);
+  const isBright        = lab.L > 64;  // 쿨톤 분류용 (하향으로 여름쿨 영역 확대)
+  // 봄/가을 경계: L>67이면 봄, L<57이면 가을, 중간(57~67)은 C*로 판단 (경계 흔들림 방지)
+  const isWarmBright    = lab.L > 67 || (lab.L >= 57 && Cstar > 13);
   const isDark          = lab.L < 55;
   const isVeryDark      = lab.L < 48;
   const isClear    = Cstar > 15;
@@ -198,14 +198,14 @@ function classifyPersonalColor(avgRgb) {
         description = '여름 쿨 소프트';
         palette = ['#D4B8C8', '#B8B8D4', '#B8CCD4', '#C8D4B8', '#D4C8D4'];
         characteristics = ['뮤트하고 부드러운 차가운 색조', '모브, 스모키블루, 소프트핑크가 잘 어울림', '차갑고 부드러운 피부 톤'];
-      } else if (isBlue || isClear) {
-        // 창백 + 파란기조 or 선명: 겨울 브라이트
+      } else if (isBlue) {
+        // 창백 + 파란기조: 겨울 브라이트
         season = 'winter'; subType = 'bright';
         description = '겨울 쿨 브라이트';
         palette = ['#6666FF', '#CC44CC', '#FF4477', '#4499FF', '#00CCAA'];
         characteristics = ['밝고 선명한 차가운 색조', '로얄블루, 마젠타, 에메랄드가 잘 어울림', '블루 기반의 선명한 피부 톤'];
       } else {
-        // 창백 + 로즈기조 + 중간채도: 여름 라이트
+        // 창백 + 로즈기조 (선명 포함): 여름 라이트
         season = 'summer'; subType = 'light';
         description = '여름 쿨 라이트';
         palette = ['#FFE0EC', '#E8D5F5', '#D5E8F5', '#D5F5EE', '#FFD5EC'];
@@ -253,7 +253,7 @@ function classifyPersonalColor(avgRgb) {
   const skinTone = classifySkinTone(lab.L);
 
   // 세 축(웜/쿨, 명도, 채도) 경계 거리 기반 신뢰도 산출 (0~1)
-  const warmConfidence = Math.min(1, Math.abs(warmScore - 11) / 10);
+  const warmConfidence = Math.min(1, Math.abs(warmScore - 21) / 10);
   const brightnessConfidence = isBright
     ? Math.min(1, (lab.L - 72) / 8)
     : isDark
