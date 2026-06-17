@@ -137,13 +137,14 @@ function classifyPersonalColor(avgRgb) {
   const warmScore = lab.b;
   const isWarm = lab.b > 21 || (lab.L > 80 && lab.b > 13);
 
-  const isBright        = lab.L > 64;  // 쿨톤 분류용 (하향으로 여름쿨 영역 확대)
-  // 봄/가을 경계: L>67이면 봄, L<57이면 가을, 중간(57~67)은 C*로 판단 (경계 흔들림 방지)
-  const isWarmBright    = lab.L > 67 || (lab.L >= 57 && Cstar > 13);
+  const isBright        = lab.L > 65;  // 쿨톤 분류용 (여름쿨 영역 확대)
+  // 봄/가을 경계: L>68이면 봄, 이하면 가을
+  const isWarmBright    = lab.L > 68;
   const isDark          = lab.L < 55;
   const isVeryDark      = lab.L < 48;
-  const isClear    = Cstar > 15;
-  const isMuted    = Cstar < 9;
+  // 비비드: 밝기(L>72)와 채도(C*>22) 모두 높아야 — 밝음만으로 비비드 분류되는 현상 방지
+  const isClear    = lab.L > 72 && Cstar > 22;
+  const isMuted    = Cstar < 13;
   // b* < 0: 파란기조 → winter 지표 (summer는 b* ≥ 0의 로즈/핑크 기조)
   const isBlue     = lab.b < 0;
 
