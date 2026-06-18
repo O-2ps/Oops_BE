@@ -132,10 +132,10 @@ function classifyPersonalColor(avgRgb) {
 
   // 웜/쿨: b*(노랑-파랑 축)이 핵심 판별자
   // 웜 피부 b* ≈ 13~30, 쿨 피부 b* ≈ -2~4
-  // 임계값 19: 웜 66% / 쿨 33% 균형
-  // 매우 밝은 피부(L>80)는 채도 압축으로 b* 범위가 좁으므로 11로 완화
+  // 임계값 17: 웜 72% / 쿨 27% 균형
+  // 매우 밝은 피부(L>80)는 채도 압축으로 b* 범위가 좁으므로 10으로 완화
   const warmScore = lab.b;
-  const isWarm = lab.b > 19 || (lab.L > 80 && lab.b > 11);
+  const isWarm = lab.b > 17 || (lab.L > 80 && lab.b > 10);
 
   const isBright        = lab.L > 65;  // 쿨톤 분류용 (여름쿨 영역 확대)
   // 봄/가을 경계: L>68이면 봄, 이하면 가을
